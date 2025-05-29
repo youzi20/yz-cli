@@ -1,7 +1,8 @@
 {
   "name": "yzkit",
-  "version": "1.0.1",
+  "version": "1.0.4",
   "description": "A CLI tool to scaffold modules and components",
+  "type": "module",
   "bin": {
     "yzkit": "./bin/index.js"
   },
@@ -12,8 +13,6 @@
     "node": ">=14"
   },
   "dependencies": {
-    "fs-extra": "^11.3.0",
-    "inquirer": "^12。6.0",
-    "degit": "^2.8.0"
+    "degit": "^2.8.4"
   }
 }

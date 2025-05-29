@@ -1,88 +1,52 @@
 #!/usr/bin/env node
 
-const fs = require("fs");
-const path = require("path");
-const { copySync } = require("fs-extra");
-const inquirer = require("inquirer");
-const degit = require("degit");
+import { existsSync } from "fs";
+import { resolve } from "path";
+import { execSync } from "child_process";
 
-const LOCAL_TEMPLATE_ROOT = path.resolve(__dirname, "../templates");
-const CACHE_DIR = path.resolve(__dirname, "../.cache/templates");
-const GITHUB_REPO = "youzi20/yz-cli/templates"; // 改成你的仓库地址
+const args = process.argv.slice(2);
+
+if (args.length !== 1) {
+  console.error("❌ 请传入模块路径，例如：ui/Button 或 module/Task");
+  process.exit(1);
+}
+
+const inputPath = args[0]; // 例如 ui/Button
+const [type, name] = inputPath.split("/");
+
+if (!type || !name) {
+  console.error("❌ 输入格式错误，正确格式为 ui/ComponentName 或 module/ModuleName");
+  process.exit(1);
+}
 
 const TYPE_MAP = {
   ui: {
-    label: "基础 UI 组件",
-    subdir: "ui",
-    destDir: "src/components"
+    label: "UI 组件",
+    repo: "youzi20/yz-cli/templates/ui",
+    destDir: "src/components",
   },
   module: {
-    label: "业务功能模块",
-    subdir: "modules",
-    destDir: "src/modules"
-  }
+    label: "业务模块",
+    repo: "youzi20/yz-cli/templates/modules",
+    destDir: "src/modules",
+  },
 };
 
-async function ensureTemplatesFromGitHub(subdir) {
-  const cachePath = path.join(CACHE_DIR, subdir);
-  if (!fs.existsSync(cachePath)) {
-    console.log(`🌐 正在从 GitHub 拉取模板 ${subdir} ...`);
-    const emitter = degit(`${GITHUB_REPO}/${subdir}`, {
-      cache: true,
-      force: true,
-      verbose: false
-    });
-    await emitter.clone(cachePath);
-  }
-  return cachePath;
+const config = TYPE_MAP[type];
+if (!config) {
+  console.error(`❌ 不支持的类型：${type}，支持 ui 或 module`);
+  process.exit(1);
 }
 
-async function main() {
-  const { type } = await inquirer.prompt([
-    {
-      type: "list",
-      name: "type",
-      message: "请选择要添加的类型：",
-      choices: Object.entries(TYPE_MAP).map(([key, value]) => ({
-        name: value.label,
-        value: key
-      }))
-    }
-  ]);
+const dest = resolve(process.cwd(), config.destDir, name);
 
-  const config = TYPE_MAP[type];
-
-  // 优先从 GitHub 获取远程模板
-  const templateDir = await ensureTemplatesFromGitHub(config.subdir);
-
-  const available = fs.readdirSync(templateDir).filter((f) =>
-    fs.statSync(path.join(templateDir, f)).isDirectory()
-  );
-
-  if (available.length === 0) {
-    console.error(`❌ 没有可用模板`);
-    process.exit(1);
-  }
-
-  const { selected } = await inquirer.prompt([
-    {
-      type: "list",
-      name: "selected",
-      message: `请选择要添加的${config.label}：`,
-      choices: available
-    }
-  ]);
-
-  const src = path.join(templateDir, selected);
-  const dest = path.resolve(process.cwd(), config.destDir, selected);
-
-  if (fs.existsSync(dest)) {
-    console.error(`❌ 目标目录已存在: ${dest}`);
-    process.exit(1);
-  }
-
-  copySync(src, dest);
-  console.log(`✅ 已成功添加 ${config.label}：${selected} 到 ${dest}`);
+if (existsSync(dest)) {
+  console.error(`❌ 目标目录已存在: ${dest}`);
+  process.exit(1);
 }
 
-main();
+const remotePath = `${config.repo}/${name}`;
+console.log(`🚀 正在从 GitHub 拉取模板: ${remotePath}`);
+execSync(`npx degit ${remotePath} "${dest}"`, { stdio: "inherit" });
+
+console.log(`✅ 成功复制 ${config.label}：${name} 到 ${dest}`);
