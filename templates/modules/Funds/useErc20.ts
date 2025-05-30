@@ -1,4 +1,6 @@
-import { useAccount, usePublicClient, useReadContract, useWriteContract } from "wagmi";
+import { useReadContract } from "wagmi";
+
+import useWriteContract from "./useWriteContract";
 
 export const useErc20Decimals = (address: `0x${string}`) => {
   return useReadContract({
@@ -56,32 +58,21 @@ export const useErc20Allowance = (address: `0x${string}`, spender: `0x${string}`
 };
 
 export const useErc20Approve = (address: `0x${string}`, spender: `0x${string}`, amount: bigint) => {
-  const publicClient = usePublicClient();
-  const { writeContractAsync, ...other } = useWriteContract();
-
-  const approve = async () => {
-    const hash = await writeContractAsync({
-      address,
-      abi: [
-        {
-          type: "function",
-          name: "approve",
-          stateMutability: "nonpayable",
-          inputs: [
-            { internalType: "address", name: "spender", type: "address" },
-            { internalType: "uint256", name: "amount", type: "uint256" },
-          ],
-          outputs: [{ internalType: "bool", name: "", type: "bool" }],
-        },
-      ],
-      functionName: "approve",
-      args: [spender, amount],
-    });
-
-    const response = await publicClient?.waitForTransactionReceipt({ hash });
-
-    return response?.status === "success";
-  };
-
-  return { approve, ...other };
+  return useWriteContract({
+    address,
+    abi: [
+      {
+        type: "function",
+        name: "approve",
+        stateMutability: "nonpayable",
+        inputs: [
+          { internalType: "address", name: "spender", type: "address" },
+          { internalType: "uint256", name: "amount", type: "uint256" },
+        ],
+        outputs: [{ internalType: "bool", name: "", type: "bool" }],
+      },
+    ],
+    functionName: "approve",
+    args: [spender, amount],
+  });
 };

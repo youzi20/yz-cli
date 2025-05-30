@@ -1,34 +1,30 @@
 import { useMemo } from "react";
-import { useAccount, useWriteContract } from "wagmi";
+import { useAccount } from "wagmi";
 import { formatUnits, parseUnits } from "viem";
 
+import useWriteContract from "./useWriteContract";
 import { useErc20Decimals, useErc20Balance, useErc20Allowance, useErc20Approve } from "./useErc20";
 
 const DEPOSIT_CONTRACT_ADDRESS = "0x5a86795b8f90c62284a5A6262aB8B104427F7156";
 
 const useReceiveTokenPayment = (token: `0x${string}`, amount: bigint) => {
-  const { writeContractAsync, ...other } = useWriteContract();
-
-  const receiveTokenPayment = () =>
-    writeContractAsync({
-      address: DEPOSIT_CONTRACT_ADDRESS,
-      abi: [
-        {
-          type: "function",
-          name: "receiveTokenPayment",
-          stateMutability: "nonpayable",
-          inputs: [
-            { internalType: "address", name: "token", type: "address" },
-            { internalType: "uint256", name: "amount", type: "uint256" },
-          ],
-          outputs: [],
-        },
-      ],
-      functionName: "receiveTokenPayment",
-      args: [token, amount],
-    });
-
-  return { receiveTokenPayment, ...other };
+  return useWriteContract({
+    address: DEPOSIT_CONTRACT_ADDRESS,
+    abi: [
+      {
+        type: "function",
+        name: "receiveTokenPayment",
+        stateMutability: "nonpayable",
+        inputs: [
+          { internalType: "address", name: "token", type: "address" },
+          { internalType: "uint256", name: "amount", type: "uint256" },
+        ],
+        outputs: [],
+      },
+    ],
+    functionName: "receiveTokenPayment",
+    args: [token, amount],
+  });
 };
 
 export const useDeposit = (address: `0x${string}`, inputAmount: string) => {
@@ -50,8 +46,8 @@ export const useDeposit = (address: `0x${string}`, inputAmount: string) => {
     };
   }, [decimals, balance, allowance, inputAmount]);
 
-  const { approve } = useErc20Approve(address, DEPOSIT_CONTRACT_ADDRESS, amount);
-  const { receiveTokenPayment } = useReceiveTokenPayment(address, amount);
+  const { trigger: approve } = useErc20Approve(address, DEPOSIT_CONTRACT_ADDRESS, amount);
+  const { trigger: receiveTokenPayment } = useReceiveTokenPayment(address, amount);
 
   return { ...formatted, approve, receiveTokenPayment };
 };

@@ -1,5 +1,5 @@
-import { use, useCallback, useMemo } from "react";
-import { useAccount, useWriteContract } from "wagmi";
+import { useCallback } from "react";
+import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 
 import { useAuthFetcher } from "@/hooks/api/useFetcher";
 
@@ -31,7 +31,9 @@ const useWithdrawSignature = () => {
 };
 
 const useClaim = (token: `0x${string}`, inputAmount: string) => {
+  const publicClient = usePublicClient();
   const { writeContractAsync, ...other } = useWriteContract();
+
   const withdrawSignature = useWithdrawSignature();
 
   const claim = async () => {
@@ -40,7 +42,7 @@ const useClaim = (token: `0x${string}`, inputAmount: string) => {
     if (!signature) return;
     const { v, r, s, nonce, amount, deadline, recordId, walletAddress, claimContract } = signature;
 
-    const response = await writeContractAsync({
+    const hash = await writeContractAsync({
       address: claimContract,
       abi: [
         {
@@ -95,6 +97,10 @@ const useClaim = (token: `0x${string}`, inputAmount: string) => {
         [s],
       ],
     });
+
+    const response = await publicClient?.waitForTransactionReceipt({ hash });
+
+    return response?.status === "success";
   };
 
   return { claim, ...other };
