@@ -2,21 +2,27 @@
 
 import { useEffect, useMemo, useCallback, useRef } from "react";
 
-import { mutate } from "swr";
+import { FetcherType, useAuthStore, useRequest } from "yz-swr-fetch";
 
-import { API_LOTTERY_INFO, API_USER_INFO } from "@/hooks/api/constant";
-import useRequest, { useAuthStore, useRequestMutation } from "@/hooks/api/useRequest";
+import { usePublicFetcher, useAuthFetcher } from "@/hooks/api/useFetcher";
 
-import { TaskInfo, Progress, useTaskStore } from "./store";
+import { TaskInfo, TaskProgress, useTaskStore } from "./store";
 
 export function windowOpen(url: string) {
   return window.open(url);
 }
 
-export function useHandleTask(url: string, taskId: number, action?: string | null) {
-  const handleTask = useRequestMutation<boolean, { taskId: number }>(url, (request, params) =>
-    request({ body: params })
+function useProgressList() {
+  const fetcher = useAuthFetcher<TaskProgress[]>();
+
+  return useCallback(
+    (params: { taskIds: string }) => fetcher("/task/progress_list", { body: params }),
+    [fetcher],
   );
+}
+
+export function useHandleTask(url: string, taskId: number, action?: string | null) {
+  const fetcher = useAuthFetcher<boolean>();
 
   const addTaskIdListener = useTaskStore(state => state.addTaskIdListener);
 
@@ -30,39 +36,23 @@ export function useHandleTask(url: string, taskId: number, action?: string | nul
     clickRef.current = true;
     addTaskIdListener(taskId, false);
 
-    const res = await handleTask({ taskId });
+    const res = await fetcher(url, { body: { taskId } });
 
     clickRef.current = false;
 
     if (res) addTaskIdListener(taskId, true);
-  }, [handleTask, taskId, action]);
-}
-
-export function useProgress(ids: (number | null | undefined)[]) {
-  const progressList = useTaskStore(state => state.progressList);
-
-  return useMemo(() => {
-    if (!progressList) return [];
-
-    return ids.map(id => (id ? progressList.get(id) ?? 1 : 1));
-  }, [progressList, ids]);
-}
-
-export function useIsLoading(id: number): boolean {
-  const taskIdLoadingList = useTaskStore(state => state.taskIdLoadingList);
-
-  return useMemo(() => taskIdLoadingList.includes(id), [taskIdLoadingList, id]);
+  }, [fetcher, taskId, action]);
 }
 
 export function useTask() {
   const authorization = useAuthStore(state => state.authorization);
 
-  const { data: task } = useRequest<TaskInfo[]>("/task/task_list");
-  const { data: progress } = useRequest<Progress[]>("/task/progress_list");
-  const getProgressList = useRequestMutation<Progress[], { taskIds: string }>(
-    "/task/progress_list",
-    (request, params) => request({ body: params })
-  );
+  const { data: rawTasks } = useRequest<TaskInfo[]>("/task/task_list", {
+    type: FetcherType.PUBLIC,
+  });
+  const { data: rawProgress } = useRequest<TaskProgress[]>("/task/progress_list");
+
+  const getProgressList = useProgressList();
 
   const progressList = useTaskStore(state => state.progressList);
   const taskIdListenerList = useTaskStore(state => state.taskIdListenerList);
@@ -72,36 +62,38 @@ export function useTask() {
 
   const timer = useRef<NodeJS.Timeout>();
 
+  // 初始化任务数据
   useEffect(() => {
-    if (task) initTask(task);
-  }, [task]);
+    if (rawTasks) initTask(rawTasks);
+  }, [rawTasks]);
 
+  // 初始化进度数据
   useEffect(() => {
-    if (progress) initProgress(progress);
-  }, [progress]);
+    if (rawProgress) initProgress(rawProgress);
+  }, [rawProgress]);
 
   useEffect(() => {
     if (!authorization || !progressList || !taskIdListenerList.length) return;
+
     if (timer.current) clearTimeout(timer.current);
 
     timer.current = setTimeout(() => {
       (async () => {
-        const progressList = await getProgressList({ taskIds: taskIdListenerList.join() });
+        const res = await getProgressList({ taskIds: taskIdListenerList.join() });
+        if (!res) return;
 
-        if (progressList) {
-          const finishedList: number[] = [];
+        const finishedList: number[] = [];
 
-          progressList.forEach(progress => {
-            if (progress.finished === 1) finishedList.push(progress.taskId);
-          });
+        res.forEach(progress => {
+          if (progress.finished === 1) finishedList.push(progress.taskId);
+        });
 
-          if (finishedList.length > 0) {
-            mutate(API_USER_INFO);
-            mutate(API_LOTTERY_INFO);
-          }
-
-          updateProgress(finishedList);
+        if (finishedList.length > 0) {
+          // mutate(API_USER_INFO);
+          // mutate(API_LOTTERY_INFO);
         }
+
+        updateProgress(finishedList);
       })();
     }, 3000);
   }, [authorization, progressList, taskIdListenerList]);

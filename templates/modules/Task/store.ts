@@ -1,8 +1,7 @@
-import React from "react";
-
+import { useMemo } from "react";
 import { create } from "zustand";
 
-type TaskType =
+export type TaskType =
   | "check"
   | "connect_twitter"
   | "follow_twitter"
@@ -12,124 +11,144 @@ type TaskType =
   | "join_dc_group"
   | "like_comment_twitter";
 
-interface TaskSubGroup {
-  image: string;
-  name: string;
-}
-
 export interface TaskInfo {
   id: number;
   type: TaskType;
-  group: string; // "daily" | "one-time" | "partners";
+  group: string;
   content: React.ReactNode;
   rewardIcon: string;
   rewardAmount: string;
 
-  prevTaskId?: number | null; // 关联开启做任务限制
-  image?: string | null; // 预留字段 如果有使用cf资源文件 默认预设一套任务在前端代码内
+  prevTaskId?: number | null;
+  image?: string | null;
   action?: string | null;
-  subgroup?: TaskSubGroup | null;
+  subgroup?: {
+    image: string;
+    name: string;
+  } | null;
   needCheck?: 0 | 1 | null;
 
   isChild?: boolean;
   disabled?: boolean | null;
 }
 
-export interface SubgroupTaskInfo {
+export interface TaskSubgroupInfo {
   id: number;
   image: string;
   name: string;
   taskList: TaskInfo[];
 }
 
+export type TaskGroupList = Record<string, (TaskInfo | TaskSubgroupInfo)[]>;
+
 export type FinishedType = 0 | 1 | 2;
 
-export interface Progress {
+export interface TaskProgress {
   taskId: number;
   finished: FinishedType;
 }
 
-interface TaskStore {
-  taskMap: Map<string, (TaskInfo | SubgroupTaskInfo)[]> | null;
-  currentGroup: string | null;
-  taskList: (TaskInfo | SubgroupTaskInfo)[] | null;
+export interface TaskStore {
+  tasks: TaskGroupList | null;
   progressList: Map<number, FinishedType> | null;
   taskIdLoadingList: number[];
   taskIdListenerList: number[];
 }
 
-interface TaskStoreAction {
+export interface TaskStoreAction {
   initTask: (tasks: TaskInfo[]) => void;
-  initProgress: (progress: Progress[]) => void;
+  initProgress: (progress: TaskProgress[]) => void;
   updateProgress: (ids: number[]) => void;
-  changeGroup: (group: string) => void;
   addTaskIdListener: (id: number, isLoading: boolean) => void;
 }
 
-export const useTaskStore = create<TaskStore & TaskStoreAction>(set => ({
-  taskMap: null,
-  currentGroup: null,
-  taskList: null,
+export const useTaskStore = create<TaskStore & TaskStoreAction>((set, get) => ({
+  tasks: null,
   progressList: null,
   taskIdLoadingList: [],
   taskIdListenerList: [],
-  initTask(tasks) {
-    const _tasks: Record<string, (TaskInfo | SubgroupTaskInfo)[]> = {};
-    const _subgroups: Record<string, TaskInfo[]> = {};
 
-    tasks.forEach(item => {
-      if (!_tasks[item.group]) _tasks[item.group] = [];
+  initTask(rawTasks) {
+    const grouped: TaskGroupList = {};
+    const subgroupMap: Record<string, TaskInfo[]> = {};
 
-      if (!item.subgroup) {
-        _tasks[item.group].push(item);
+    rawTasks.forEach(task => {
+      const group = task.group;
+      const subgroup = task.subgroup;
+
+      if (!grouped[group]) grouped[group] = [];
+
+      if (!subgroup) {
+        grouped[group].push(task);
         return;
       }
 
-      if (!_subgroups[item.subgroup.name]) {
-        _subgroups[item.subgroup.name] = [];
-        _tasks[item.group].push({
-          ...item.subgroup,
-          id: item.id,
-          taskList: _subgroups[item.subgroup.name],
+      const key = subgroup.name;
+
+      if (!subgroupMap[key]) {
+        subgroupMap[key] = [];
+
+        grouped[group].push({
+          id: task.id, // 用第一个任务的 ID 作为子组 ID
+          image: subgroup.image,
+          name: subgroup.name,
+          taskList: subgroupMap[key],
         });
       }
 
-      _subgroups[item.subgroup.name].push(item);
+      subgroupMap[key].push(task);
     });
 
-    const _taskData = Object.entries(_tasks);
-    const current = _taskData[0];
-
-    set({ currentGroup: current[0], taskList: current[1], taskMap: new Map(_taskData) });
+    set({ tasks: grouped });
   },
-  initProgress: progress => {
-    const _progress = progress.map(item => [item.taskId, item.finished] as [number, FinishedType]);
 
-    set({ progressList: new Map(_progress) });
+  initProgress(progress) {
+    const map = new Map<number, FinishedType>();
+    progress.forEach(p => map.set(p.taskId, p.finished));
+    set({ progressList: map });
   },
-  updateProgress: ids =>
+
+  updateProgress(ids) {
     set(state => {
-      const progressList = new Map(state.progressList);
-      ids.forEach(id => {
-        progressList.set(id, 1);
-      });
+      const updated = new Map(state.progressList);
+      ids.forEach(id => updated.set(id, 1));
 
       return {
-        progressList,
+        progressList: updated,
         taskIdLoadingList: state.taskIdLoadingList.filter(id => !ids.includes(id)),
         taskIdListenerList: state.taskIdListenerList.filter(id => !ids.includes(id)),
       };
-    }),
-  changeGroup: group =>
-    set(state => ({ currentGroup: group, taskList: state.taskMap?.get(group) })),
-  addTaskIdListener: (id, isListener) =>
-    set(state => ({
-      taskIdLoadingList: [...state.taskIdLoadingList, id],
-      ...(isListener ? { taskIdListenerList: [...state.taskIdListenerList, id] } : {}),
-    })),
-  // removeTaskIdListener: id =>
-  //   set(state => ({
-  //     taskIdLoadingList: state.taskIdLoadingList.filter(taskId => taskId !== id),
-  //     taskIdListenerList: state.taskIdListenerList.filter(taskId => taskId !== id),
-  //   })),
+    });
+  },
+
+  addTaskIdListener(id, isListener) {
+    set(state => {
+      const loadingSet = new Set(state.taskIdLoadingList);
+      loadingSet.add(id);
+
+      const listenerSet = new Set(state.taskIdListenerList);
+      if (isListener) listenerSet.add(id);
+
+      return {
+        taskIdLoadingList: Array.from(loadingSet),
+        taskIdListenerList: Array.from(listenerSet),
+      };
+    });
+  },
 }));
+
+export function useProgress(ids: (number | null | undefined)[]) {
+  const progressList = useTaskStore(state => state.progressList);
+
+  return useMemo(() => {
+    if (!progressList) return [];
+
+    return ids.map(id => (id ? (progressList.get(id) ?? 1) : 1));
+  }, [progressList, ids]);
+}
+
+export function useIsLoading(id: number): boolean {
+  const taskIdLoadingList = useTaskStore(state => state.taskIdLoadingList);
+
+  return useMemo(() => taskIdLoadingList.includes(id), [taskIdLoadingList, id]);
+}

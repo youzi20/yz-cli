@@ -1,20 +1,12 @@
 import Image from "next/image";
-import { useRouter } from "next/navigation";
-
-import React, { useState } from "react";
-
 import { twMerge } from "tailwind-merge";
 
-import { ArrowIcon } from "@/components/Icon";
+import { AssetsWrapper } from "@/components/Assets";
 
-import { Background } from "@/sections/dapp/Backdrop";
+import { formatDelimiter } from "@/utils/formatNumber";
 
-import useWrappedClick from "@/hooks/useWrappedClick";
-
-import TaskBase, { TaskItemInfo } from "./TaskBase";
-import { TaskInfo, SubgroupTaskInfo, useTaskStore } from "./store";
+import { TaskSubgroupInfo, TaskInfo, useIsLoading, useProgress } from "./store";
 import { useHandleTask } from "./hooks";
-import { useAuthStore } from "@/hooks/api/useRequest";
 
 import ImgX from "./images/socialX.svg";
 import ImgTelegram from "./images/socialTelegram.svg";
@@ -24,6 +16,35 @@ const renderSocialX = (image?: string | null) =>
 
 const renderSocialTelegram = (image?: string | null) =>
   image ? <img src={image} /> : <Image src={ImgTelegram} alt="telegram" />;
+
+export interface TaskItemInfo extends Omit<TaskInfo, "type" | "image"> {
+  image?: React.ReactNode;
+  onClick?: () => void;
+}
+
+export function TaskBase(props: TaskItemInfo) {
+  const { id, prevTaskId, image, content, rewardIcon, rewardAmount, onClick } = props;
+
+  const isLoading = useIsLoading(id);
+  const [progress, prevProgress] = useProgress([id, prevTaskId]);
+
+  return (
+    <div
+      className={twMerge("flex items-center justify-between gap-2 rounded-lg bg-black/20 p-3")}
+      onClick={onClick}
+    >
+      <div className="h-10 w-10 rounded-xl bg-gradient-to-b from-black to-[#0240B1]">{image}</div>
+
+      <div className="flex-1">
+        <p className="mb-1 text-xs font-bold leading-none">{content}</p>
+      </div>
+
+      <AssetsWrapper icon={<div className="rounded-full bg-black" />}>
+        <span className="font-DinPro font-bold">+{formatDelimiter(rewardAmount)}</span>
+      </AssetsWrapper>
+    </div>
+  );
+}
 
 export function CheckWallet(props: TaskItemInfo) {
   return <TaskBase {...props} />;
@@ -51,29 +72,6 @@ export function LikeCommentTweet(props: TaskItemInfo) {
   return <TaskBase {...props} onClick={handle} />;
 }
 
-export function BindPhone(props: TaskItemInfo) {
-  const addTaskIdListener = useTaskStore(state => state.addTaskIdListener);
-  const useInfo = useAuthStore(state => state.userInfo);
-
-  const router = useRouter();
-  const handle = async () => {
-    if (useInfo?.source !== "email" || useInfo?.phone) {
-      addTaskIdListener(3, false);
-      await new Promise<void>((resolve, reject) => {
-        setTimeout(() => {
-          addTaskIdListener(3, true);
-          resolve();
-          return;
-        }, 3000);
-      });
-    } else {
-      router.push("/bind?isTask=1&editType=phone");
-    }
-  };
-
-  return <TaskBase {...props} onClick={handle} />;
-}
-
 export function JoinTelegram(props: TaskItemInfo) {
   const handle = useHandleTask("/task/join_tg_group", props.id, props.action);
 
@@ -82,36 +80,6 @@ export function JoinTelegram(props: TaskItemInfo) {
 
 export function JoinDiscord(props: TaskItemInfo) {
   return <TaskBase {...props} />;
-}
-
-function GroupItem(props: SubgroupTaskInfo) {
-  const { image, name, taskList } = props;
-  const [visible, setVisible] = useState<boolean>(false);
-
-  const handleChangeVisible = useWrappedClick(() => {
-    setVisible(!visible);
-  }, [visible]);
-
-  return (
-    <div className="bg-[#171618]">
-      <div className="flex items-center p-3" onClick={handleChangeVisible}>
-        <div className="mr-3 h-8 w-8">
-          <img src={image} alt="" />
-        </div>
-        <div className="flex-1">
-          <p className="text-sm font-medium leading-none">{name}</p>
-        </div>
-
-        <ArrowIcon className={twMerge("mx-2 rotate-90 text-2xs", visible && "-rotate-90")} />
-      </div>
-
-      <div className={twMerge("space-y-3 overflow-hidden", visible ? "h-auto pb-3" : "h-0")}>
-        {taskList.map(item => (
-          <TaskItem {...item} isChild key={item.id} />
-        ))}
-      </div>
-    </div>
-  );
 }
 
 function TaskItem(props: TaskInfo) {
@@ -149,23 +117,17 @@ function TaskItem(props: TaskInfo) {
     return <JoinDiscord {...other} />;
   }
 
-  if (type === "bind_phone") {
-    return <BindPhone image={renderSocialTelegram(image)} {...other} />;
-  }
   return <></>;
 }
 
-export default function TaskList() {
-  const taskList = useTaskStore(state => state.taskList);
-
-  if (!taskList) return;
+export default function TaskList(props: TaskSubgroupInfo) {
+  const { image, name, taskList } = props;
 
   return (
-    <Background childClass="grid gap-3 py-5">
-      {taskList.map(item => {
-        if ("taskList" in item) return <GroupItem {...item} key={item.id} />;
-        return <TaskItem {...item} key={item.id} />;
-      })}
-    </Background>
+    <div className="space-y-3 overflow-hidden">
+      {taskList.map(item => (
+        <TaskItem {...item} isChild key={item.id} />
+      ))}
+    </div>
   );
 }
